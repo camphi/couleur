@@ -16,35 +16,31 @@ awk_unbuffered=0
 awk_ignore_case=0
 awk_null_data=0
 awk_filter=0
-awk_fixed=0
+awk_pristine=0
+awk_line_numbers=0
 
 show_help() {
     cat << EOF
 Usage: command | ${0##*/} [global_options] [pattern_options]
 
 Global Options:
-  -u, --unbuffered          Flush output instantly (ideal for tail -f)
-  -i, --ignore-case         Make all pattern matches case-insensitive
-  -z, --zero-terminated     Treat records as null-separated fields
-  -f, --filter              Only output lines that match at least one rule
-  -p, --pristine            Force remove ANSI cntrl from stdin
-  -h, --help                Show this help block
-  --                        Explicitly signals the end of global options
+  -u, --unbuffered               Flush output instantly (ideal for tail -f)
+  -i, --ignore-case              Make all pattern matches case-insensitive
+  -z, --zero-terminated          Treat records as null-separated fields
+  -f, --filter                   Only output lines that match at least one rule
+  -p, --pristine                 Force remove ANSI cntrl from stdin
+  --line-number                  Prefix output with source line numbers
+  -h, --help                     Show this help block
+  --                             Explicitly signals the end of global options
 
-Inline Pattern Switches (No style arguments required):
-  -n <regex>                Highlight match using inverse video (Default)
-  -r <regex>                Highlight match in Bold Red
-  -g <regex>                Highlight match in Bold Green
-  -y <regex>                Highlight match in Bold Yellow
+Inline Pattern Switches (Style-First Parsing):
+  -n, --negative <regex>         Highlight match using inverse video (Default)
+  -r, --red <regex>              Highlight match in Bold Red
+  -g, --green <regex>            Highlight match in Bold Green
+  -y, --yellow <regex>           Highlight match in Bold Yellow
 
 Standard Positional Syntax:
-  [<style_spec>] <regex>    If style_spec is omitted, defaults to inverse.
-
-Examples:
-  tail -f log.txt | ${0##*/} -i -r 'error' -y 'warn' -g 'ok'
-  tail -f /var/log/syslog | ${0##*/} -r 'error' -y 'warn'
-  cat build.log | ${0##*/} 'bold,rgb(255,50,50)' 'failed' 'bg_#007800,white' 'passed'
-  echo "123456789" | ${0##*/} red "123456789" blue "234" green "456"
+  [<style_spec>] <regex>         If style_spec is omitted, defaults to inverse.
 EOF
 }
 
@@ -52,11 +48,7 @@ add_color_rule() {
     local regex="$1"
     local style_spec="${2,,}"
 
-    if [[ -z "${regex}" ]]; then
-        echo "Error: Regex pattern cannot be empty. Skipping." >&2
-        return
-    fi
-
+    [[ -z "${regex}" ]] && return
     style_spec="${style_spec// /}"
     local -a codes=()
     local remaining="${style_spec}"
@@ -86,8 +78,6 @@ add_color_rule() {
                 codes+=("38" "2" "$((16#${BASH_REMATCH[1]}))" "$((16#${BASH_REMATCH[2]}))" "$((16#${BASH_REMATCH[3]}))")
             elif [[ "${comp}" =~ ^bg_#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$ ]]; then
                 codes+=("48" "2" "$((16#${BASH_REMATCH[1]}))" "$((16#${BASH_REMATCH[2]}))" "$((16#${BASH_REMATCH[3]}))")
-            else
-                echo "Warning: Ignoring invalid style modifier '${comp}'" >&2
             fi
         else
             remaining="${remaining#?}"
@@ -95,7 +85,6 @@ add_color_rule() {
     done
 
     [[ ${#codes[@]} -eq 0 ]] && codes+=("7")
-
     local joined_codes
     IFS=';' joined_codes="${codes[*]}"
 
@@ -103,91 +92,37 @@ add_color_rule() {
     rules_ansi+=($'\e['"${joined_codes}m")
 }
 
-# Main Start
-# Parse Global Operational Flags
+# Parse Global Options
 while (( $# > 0 )); do
     case "$1" in
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        -u|--unbuffered)
-            awk_unbuffered=1
-            shift
-            ;;
-        -i|--ignore-case)
-            awk_ignore_case=1
-            shift
-            ;;
-        -z|--null-data|--zero-terminated)
-            awk_null_data=1
-            shift
-            ;;
-        -f|--filter)
-            awk_filter=1
-            shift
-            ;;
-        -p|--pristine)
-            awk_pristine=1
-            shift
-            ;;
-        --)
-            shift
-            break
-            ;;
-        -n|-r|-g|-y)
-            break
-            ;;
-        -*)
-            echo "Error: Unknown global option '$1'" >&2
-            exit 1
-            ;;
-        *) break ;;
+        -h|--help)        show_help; exit 0 ;;
+        -u|--unbuffered)  awk_unbuffered=1; shift ;;
+        -i|--ignore-case) awk_ignore_case=1; shift ;;
+        -z|--null-data)   awk_null_data=1; shift ;;
+        -f|--filter)      awk_filter=1; shift ;;
+        -p|--pristine)    awk_pristine=1; shift ;;
+        --line-number)    awk_line_numbers=1; shift ;;
+        --)               shift; break ;;
+        --?[nrgy]*)       break ;;
+        -*)               echo "Error: Unknown global option '$1'" >&2; exit 1 ;;
+        *)                break ;;
     esac
 done
 
-if [[ -t 0 ]]; then
-    show_help
-    exit 1
-fi
+if [[ -t 0 ]]; then show_help; exit 1; fi
 
-if (( $# < 1 )); then
-    echo "Error: At least one regex pattern is required." >&2
-    exit 1
-fi
-
-# Process Color/Regex Configurations
+# Process Positional Style-First Pairs
 while (( $# > 0 )); do
     case "$1" in
-        -n)
-            [[ $# -lt 2 ]] && { echo "Error: $1 requires a regex argument." >&2; exit 1; }
-            add_color_rule "$2" "inverse"
-            shift 2
-            ;;
-        -r)
-            [[ $# -lt 2 ]] && { echo "Error: $1 requires a regex argument." >&2; exit 1; }
-            add_color_rule "$2" "red,bold"
-            shift 2
-            ;;
-        -g)
-            [[ $# -lt 2 ]] && { echo "Error: $1 requires a regex argument." >&2; exit 1; }
-            add_color_rule "$2" "green,bold"
-            shift 2
-            ;;
-        -y)
-            [[ $# -lt 2 ]] && { echo "Error: $1 requires a regex argument." >&2; exit 1; }
-            add_color_rule "$2" "yellow,bold"
-            shift 2
-            ;;
+        -n|--negative) add_color_rule "$2" "inverse"; shift 2 ;;
+        -r|--red)      add_color_rule "$2" "red,bold"; shift 2 ;;
+        -g|--green)    add_color_rule "$2" "green,bold"; shift 2 ;;
+        -y|--yellow)   add_color_rule "$2" "yellow,bold"; shift 2 ;;
         *)
-            # Style-First Check: If lookahead validates a style token block, pair it
             if (( $# >= 2 )); then
-                add_color_rule "$2" "$1"
-                shift 2
+                add_color_rule "$2" "$1"; shift 2
             else
-                # Default fallback: Treat argument as clean target regex
-                add_color_rule "$1" "inverse"
-                shift 1
+                add_color_rule "$1" "inverse"; shift 1
             fi
             ;;
     esac
@@ -198,12 +133,25 @@ for i in "${!rules_regex[@]}"; do
     awk_args+=("${rules_regex[i]}" "${rules_ansi[i]}")
 done
 
+# High-Performance Interval-Based Engine
 awk \
     -v ic="${awk_ignore_case}" \
     -v ub="${awk_unbuffered}" \
     -v nd="${awk_null_data}" \
     -v fl="${awk_filter}" \
-    -v pr="${awk_pristine}" '
+    -v pr="${awk_pristine}" \
+    -v ln="${awk_line_numbers}" '
+function sort(arr, n,   i, j, temp) {
+    for (i = 2; i <= n; i++) {
+        temp = arr[i]
+        j = i - 1
+        while (j > 0 && arr[j] > temp) {
+            arr[j+1] = arr[j]
+            j--
+        }
+        arr[j+1] = temp
+    }
+}
 BEGIN {
     IGNORECASE = ic
     if (nd) { RS = "\0"; ORS = "\0" }
@@ -217,70 +165,97 @@ BEGIN {
     for (i = 1; i < ARGC; i++) ARGV[i] = ""
 }
 {
-    # remove all color codes control characters
-    if (pr) {gsub(/\x1b\[[0-9;]*m/, "")}
+    if (pr) { gsub(/\x1b\[[0-9;]*m/, "") }
     len = length($0)
-    delete char_color
     line_has_match = 0
 
-    # Pass 1: Trace all targets across uncolored text boundaries
+    # Clear only the boundaries for this line
+    delete boundaries
+
+    # Pass 1: Global Regex Tracking using Native C split()
     for (r = 1; r <= rule_count; r++) {
         pat = patterns[r]
         col = colors[r]
-        start = 1
+        match_count[r] = 0
 
-        while (start <= len) {
-            if (!match(substr($0, start), pat)) break
-            m_start = start + RSTART - 1
-            m_len = RLENGTH
-
+        line_copy = $0
+        if (match(line_copy, pat)) {
             line_has_match = 1
+            gsub(pat, "\001&\002", line_copy)
 
-            if (m_len == 0) {
-                if (!(m_start in char_color)) char_color[m_start] = col
-                start++
-                continue
+            num_chunks = split(line_copy, chunks, "\001")
+            orig_idx = 1 + length(chunks[1])
+
+            for (c_idx = 2; c_idx <= num_chunks; c_idx++) {
+                chunk = chunks[c_idx]
+                p2 = index(chunk, "\002")
+                match_len = p2 - 1
+
+                # Save match interval
+                m = ++match_count[r]
+                rule_intervals_start[r, m] = orig_idx
+                rule_intervals_end[r, m] = orig_idx + match_len - 1
+
+                # Register boundary transitions
+                boundaries[orig_idx] = 1
+                boundaries[orig_idx + match_len] = 1
+
+                orig_idx += match_len + (length(chunk) - p2)
             }
-
-            for (i = m_start; i < m_start + m_len; i++) {
-                char_color[i] = col
-            }
-
-            start = m_start + m_len
         }
     }
 
-    # Filter for matched lines only
     if (fl && !line_has_match) next
+    if (ln) printf "\033[36m%d\033[0m:", NR
 
-    # Pass 2: Chunk-Buffered Rendering Engine
+    if (!line_has_match) {
+        print $0
+        if (ub) fflush()
+        next
+    }
+
+    # Add outer boundaries
+    boundaries[1] = 1
+    boundaries[len + 1] = 1
+
+    # Extract unique boundaries into a flat array
+    b_count = 0
+    delete b_list
+    for (pos in boundaries) {
+        b_list[++b_count] = pos + 0
+    }
+    sort(b_list, b_count)
+
+    # Pass 2: Interval-Based Output Generator
     last_color = ""
-    chunk_start = 1
-    for (i = 1; i <= len; i++) {
-        curr_color = char_color[i]
-        if (curr_color != last_color) {
-            if (i > chunk_start) {
-                printf "%s", substr($0, chunk_start, i - chunk_start)
+    for (k = 1; k < b_count; k++) {
+        s_start = b_list[k]
+        s_end = b_list[k+1] - 1
+        if (s_end < s_start) continue
+
+        # Resolve color by checking active rules in reverse order
+        seg_color = ""
+        for (r = rule_count; r >= 1; r--) {
+            for (m = 1; m <= match_count[r]; m++) {
+                if (s_start >= rule_intervals_start[r, m] && s_start <= rule_intervals_end[r, m]) {
+                    seg_color = colors[r]
+                    break
+                }
             }
-            if (last_color != "") printf "%s", "\033[0m"
-            if (curr_color != "") printf "%s", curr_color
-            last_color = curr_color
-            chunk_start = i
+            if (seg_color != "") break
         }
+
+        # Print the styled segment
+        if (seg_color != last_color) {
+            if (last_color != "") printf "%s", "\033[0m"
+            if (seg_color != "") printf "%s", seg_color
+            last_color = seg_color
+        }
+        printf "%s", substr($0, s_start, s_end - s_start + 1)
     }
 
-    # print remaining characters
-    if (len >= chunk_start) {
-        printf "%s", substr($0, chunk_start, len - chunk_start + 1)
-    }
-
-    # close the last color change
-    if (last_color != "") {
-        printf "%s", "\033[0m"
-    }
-
-    # output the correct line-ending character
-    print "" 
+    if (last_color != "") printf "%s", "\033[0m"
+    print ""
 
     if (ub) fflush()
 }
