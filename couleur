@@ -26,7 +26,7 @@ Usage: command | ${0##*/} [global_options] [pattern_options]
 Global Options:
   -u, --unbuffered               Flush output instantly (ideal for tail -f)
   -i, --ignore-case              Make all pattern matches case-insensitive
-  -z, --zero-terminated          Treat records as null-separated fields
+  -z, --null-data                Treat records as null-separated fields
   -f, --filter                   Only output lines that match at least one rule
   -p, --pristine                 Force remove ANSI cntrl from stdin
   --line-number                  Prefix output with source line numbers
@@ -103,8 +103,6 @@ while (( $# > 0 )); do
         -p|--pristine)    awk_pristine=1; shift ;;
         --line-number)    awk_line_numbers=1; shift ;;
         --)               shift; break ;;
-        --?[nrgy]*)       break ;;
-        -*)               echo "Error: Unknown global option '$1'" >&2; exit 1 ;;
         *)                break ;;
     esac
 done
