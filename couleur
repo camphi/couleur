@@ -13,6 +13,7 @@ rules_regex=()
 rules_ansi=()
 
 awk_unbuffered=0
+awk_interactive=''
 awk_ignore_case=0
 awk_null_data=0
 awk_filter=0
@@ -136,7 +137,10 @@ for i in "${!rules_regex[@]}"; do
     awk_args+=("${rules_regex[i]}" "${rules_ansi[i]}")
 done
 
-awk \
+# add --interactive for unbuffered mawk
+(( awk_unbuffered > 0 )) && awk --interactive '' 1>/dev/null 2>&1 && awk_interactive='--interactive'
+
+awk ${awk_interactive} \
     -v ic="${awk_ignore_case}" \
     -v ub="${awk_unbuffered}" \
     -v nd="${awk_null_data}" \
@@ -213,6 +217,6 @@ BEGIN {
     if (last_color != "") printf "%s", "\033[0m"
     print ""
 
-    if (ub) fflush()
+    if (ub) fflush("")
 }
 ' "${awk_args[@]}"
