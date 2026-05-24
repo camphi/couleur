@@ -95,15 +95,15 @@ add_color_rule() {
 # Parse Global Options
 while (( $# > 0 )); do
     case "$1" in
-        -h|--help)        show_help; exit 0 ;;
-        -u|--unbuffered)  awk_unbuffered=1; shift ;;
-        -i|--ignore-case) awk_ignore_case=1; shift ;;
-        -z|--null-data)   awk_null_data=1; shift ;;
-        -f|--filter)      awk_filter=1; shift ;;
-        -p|--pristine)    awk_pristine=1; shift ;;
-        --line-number)    awk_line_numbers=1; shift ;;
-        --)               shift; break ;;
-        *)                break ;;
+        -h|--help)          show_help; exit 0 ;;
+        -u|--unbuffered)    awk_unbuffered=1; shift ;;
+        -i|--ignore-case)   awk_ignore_case=1; shift ;;
+        -z|--null-data)     awk_null_data=1; shift ;;
+        -f|--filter)        awk_filter=1; shift ;;
+        -p|--pristine)      awk_pristine=1; shift ;;
+        --line-number)      awk_line_numbers=1; shift ;;
+        --)                 shift; break ;;
+        *)                  break ;;
     esac
 done
 
@@ -112,10 +112,10 @@ if [[ -t 0 ]]; then show_help; exit 1; fi
 # Process Positional Style-First Pairs
 while (( $# > 0 )); do
     case "$1" in
-        -n|--negative) add_color_rule "$2" "inverse"; shift 2 ;;
-        -r|--red)      add_color_rule "$2" "red,bold"; shift 2 ;;
-        -g|--green)    add_color_rule "$2" "green,bold"; shift 2 ;;
-        -y|--yellow)   add_color_rule "$2" "yellow,bold"; shift 2 ;;
+        -n|--negative)      add_color_rule "$2" "inverse"; shift 2 ;;
+        -r|--red)           add_color_rule "$2" "red,bold"; shift 2 ;;
+        -g|--green)         add_color_rule "$2" "green,bold"; shift 2 ;;
+        -y|--yellow)        add_color_rule "$2" "yellow,bold"; shift 2 ;;
         *)
             if (( $# >= 2 )); then
                 add_color_rule "$2" "$1"; shift 2
@@ -131,7 +131,6 @@ for i in "${!rules_regex[@]}"; do
     awk_args+=("${rules_regex[i]}" "${rules_ansi[i]}")
 done
 
-# High-Performance Interval-Based Engine
 awk \
     -v ic="${awk_ignore_case}" \
     -v ub="${awk_unbuffered}" \
@@ -139,17 +138,6 @@ awk \
     -v fl="${awk_filter}" \
     -v pr="${awk_pristine}" \
     -v ln="${awk_line_numbers}" '
-function sort(arr, n,   i, j, temp) {
-    for (i = 2; i <= n; i++) {
-        temp = arr[i]
-        j = i - 1
-        while (j > 0 && arr[j] > temp) {
-            arr[j+1] = arr[j]
-            j--
-        }
-        arr[j+1] = temp
-    }
-}
 BEGIN {
     IGNORECASE = ic
     if (nd) { RS = "\0"; ORS = "\0" }
@@ -166,15 +154,12 @@ BEGIN {
     if (pr) { gsub(/\x1b\[[0-9;]*m/, "") }
     len = length($0)
     line_has_match = 0
+    delete char_color
 
-    # Clear only the boundaries for this line
-    delete boundaries
-
-    # Pass 1: Global Regex Tracking using Native C split()
+    # Extraction
     for (r = 1; r <= rule_count; r++) {
         pat = patterns[r]
         col = colors[r]
-        match_count[r] = 0
 
         line_copy = $0
         if (match(line_copy, pat)) {
@@ -189,15 +174,13 @@ BEGIN {
                 p2 = index(chunk, "\002")
                 match_len = p2 - 1
 
-                # Save match interval
-                m = ++match_count[r]
-                rule_intervals_start[r, m] = orig_idx
-                rule_intervals_end[r, m] = orig_idx + match_len - 1
-
-                # Register boundary transitions
-                boundaries[orig_idx] = 1
-                boundaries[orig_idx + match_len] = 1
-
+                if (match_len == 0) {
+                    if (!(orig_idx in char_color)) char_color[orig_idx] = col
+                } else {
+                    for (i = orig_idx; i < orig_idx + match_len; i++) {
+                        char_color[i] = col
+                    }
+                }
                 orig_idx += match_len + (length(chunk) - p2)
             }
         }
@@ -206,52 +189,24 @@ BEGIN {
     if (fl && !line_has_match) next
     if (ln) printf "\033[36m%d\033[0m:", NR
 
-    if (!line_has_match) {
-        print $0
-        if (ub) fflush()
-        next
-    }
-
-    # Add outer boundaries
-    boundaries[1] = 1
-    boundaries[len + 1] = 1
-
-    # Extract unique boundaries into a flat array
-    b_count = 0
-    delete b_list
-    for (pos in boundaries) {
-        b_list[++b_count] = pos + 0
-    }
-    sort(b_list, b_count)
-
-    # Pass 2: Interval-Based Output Generator
+    # Coloration
     last_color = ""
-    for (k = 1; k < b_count; k++) {
-        s_start = b_list[k]
-        s_end = b_list[k+1] - 1
-        if (s_end < s_start) continue
-
-        # Resolve color by checking active rules in reverse order
-        seg_color = ""
-        for (r = rule_count; r >= 1; r--) {
-            for (m = 1; m <= match_count[r]; m++) {
-                if (s_start >= rule_intervals_start[r, m] && s_start <= rule_intervals_end[r, m]) {
-                    seg_color = colors[r]
-                    break
-                }
+    chunk_start = 1
+    for (i = 1; i <= len; i++) {
+        curr_color = char_color[i]
+        if (curr_color != last_color) {
+            if (i > chunk_start) {
+                printf "%s", substr($0, chunk_start, i - chunk_start)
             }
-            if (seg_color != "") break
-        }
-
-        # Print the styled segment
-        if (seg_color != last_color) {
             if (last_color != "") printf "%s", "\033[0m"
-            if (seg_color != "") printf "%s", seg_color
-            last_color = seg_color
+            if (curr_color != "") printf "%s", curr_color
+            last_color = curr_color
+            chunk_start = i
         }
-        printf "%s", substr($0, s_start, s_end - s_start + 1)
     }
-
+    if (len >= chunk_start) {
+        printf "%s", substr($0, chunk_start, len - chunk_start + 1)
+    }
     if (last_color != "") printf "%s", "\033[0m"
     print ""
 
