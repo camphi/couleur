@@ -2,7 +2,7 @@
 
 declare -A styles=(
     [bold]="1"       [dim]="2"        [italic]="3"     [underline]="4"
-    [blink]="5"      [reverse]="7"    [reset]="0"      [inverse]="7"
+    [blink]="5"      [invert]="7"    [hidden]="8"     [strike]="9"
     [black]="30"     [red]="31"       [green]="32"     [yellow]="33"
     [blue]="34"      [magenta]="35"   [cyan]="36"      [white]="37"
     [bg_black]="40"  [bg_red]="41"    [bg_green]="42"  [bg_yellow]="43"
@@ -33,7 +33,7 @@ Global Options:
   --                            Explicitly signals the end of global options
 
 Pattern Options:
-  -n, --negative <regex>        Highlight match using inverse video (Default)
+  -n, --negative <regex>        Highlight match using invert (Default)
   -r, --red <regex>             Highlight match in Bold Red
   -g, --green <regex>           Highlight match in Bold Green
   -y, --yellow <regex>          Highlight match in Bold Yellow
@@ -118,7 +118,7 @@ if [[ -t 0 ]]; then show_help; exit 1; fi
 # Process Positional Style-Regex Pairs
 while (( $# > 0 )); do
     case "$1" in
-        -n|--negative)      add_color_rule "$2" "inverse"; shift 2 ;;
+        -n|--negative)      add_color_rule "$2" "invert"; shift 2 ;;
         -r|--red)           add_color_rule "$2" "red,bold"; shift 2 ;;
         -g|--green)         add_color_rule "$2" "green,bold"; shift 2 ;;
         -y|--yellow)        add_color_rule "$2" "yellow,bold"; shift 2 ;;
@@ -126,7 +126,7 @@ while (( $# > 0 )); do
             if (( $# >= 2 )); then
                 add_color_rule "$2" "$1"; shift 2
             else
-                add_color_rule "$1" "inverse"; shift 1
+                add_color_rule "$1" "invert"; shift 1
             fi
             ;;
     esac
