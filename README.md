@@ -21,7 +21,7 @@ Global Options:
   --                            Explicitly signals the end of global options
 
 Pattern Options:
-  -n, --negative <regex>        Highlight match using inverse video (Default)
+  -n, --negative <regex>        Highlight match using invert (Default)
   -r, --red <regex>             Highlight match in Bold Red
   -g, --green <regex>           Highlight match in Bold Green
   -y, --yellow <regex>          Highlight match in Bold Yellow
