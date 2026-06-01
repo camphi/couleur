@@ -2,13 +2,13 @@
 Bash tool to color output with regex
 
 # Install
-```shell
+```
 git clone --depth 1 https://github.com/camphi/couleur.git ~/.couleur
 ln -s ~/.couleur/couleur ~/bin/
 ```
 
 # Usage
-```shell
+```
 Usage: command | couleur [global_options] [pattern_options]
 
 Global Options:
