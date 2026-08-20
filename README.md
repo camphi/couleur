@@ -34,6 +34,6 @@ Standard Positional Syntax:
                                 regex is an ERE (Extended Regular Expression).
 Ex:
 tail -f var/log/system.log | couleur -u -f -r 'ERROR' -y 'WARNING'
-cat /var/log/dpkg.log | couleur -r ' trigproc ' -y ' status ' -g ' configure '
+couleur -r ' trigproc ' -y ' status ' -g ' configure ' < /var/log/dpkg.log
 parallel --tag-string server.{}.cloud -j0 ssh server.{}.cloud -ttt 'tail -f var/log/system.log' ::: {1..55} | couleur -u cyan '^[^\t]+\t' F54927,bg_rgb(238,245,39),bold ERREUR '\[[0-9]{4}-[0-9]{2}-[0-9]{2}[0-9 -:T]\+00:00\]'
 ```
